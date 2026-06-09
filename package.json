@@ -1,13 +1,12 @@
 {
   "name": "happ-to-telegram",
-  "version": "1.0.0",
-  "description": "Приёмник заявок от голосового агента HAPP (Володя) → Telegram группа лидов",
+  "version": "1.1.0",
+  "description": "Приёмник заявок от голосового агента HAPP (Володя) → общая БД + Telegram группа лидов",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "scripts": { "start": "node server.js" },
   "dependencies": {
     "axios": "^1.7.2",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pg": "^8.11.5"
   }
 }
