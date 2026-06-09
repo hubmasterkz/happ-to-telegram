@@ -25,7 +25,7 @@ const PORT        = process.env.PORT || 3000;
 
 const BOT_NAME = "voloda";       // отдельный бот в общей таблице
 const SOURCE   = "HAPP-звонок";
-const SHOP     = "HUB MASTER";
+const SHOP     = "Call-центр";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
