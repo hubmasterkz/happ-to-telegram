@@ -23,6 +23,10 @@ const TG_CHAT     = process.env.TELEGRAM_CHAT_ID;
 const HAPP_SECRET = process.env.HAPP_SECRET || "";
 const PORT        = process.env.PORT || 3000;
 
+// CRM webhook (отправка заявок в Google Apps Script CRM)
+const CRM_WEBHOOK_URL    = process.env.CRM_WEBHOOK_URL || "https://script.google.com/macros/s/AKfycbwojTX7O0UaOmE4K4EqDmEsrCXxyJTj6MYHmzv1eDalDGeJOr8s034sp4UGmer6BFkG/exec";
+const CRM_WEBHOOK_SECRET = process.env.CRM_WEBHOOK_SECRET || "hubmaster_crm_2026";
+
 const BOT_NAME = "voloda";       // отдельный бот в общей таблице
 const SOURCE   = "HAPP-звонок";
 const SHOP     = "Call-центр";
@@ -94,6 +98,66 @@ function buildCard(f, dailyNumber, globalId) {
   return t;
 }
 
+
+function normalizePhoneForCrm(phone) {
+  const digits = String(phone || "").replace(/[^\d]/g, "");
+  if (!digits) return "";
+  if (/^8\d{10}$/.test(digits)) return "+7" + digits.slice(1);
+  if (/^7\d{10}$/.test(digits)) return "+" + digits;
+  if (/^\d{10}$/.test(digits)) return "+7" + digits;
+  return "+" + digits;
+}
+
+function buildCrmLeadPayload(f, dailyNumber, globalId, eventType = "new_lead") {
+  const phoneCrm = normalizePhoneForCrm(f.phone);
+  return {
+    secret: CRM_WEBHOOK_SECRET,
+    source: SOURCE,
+    leadSource: SOURCE,
+    sourceNumber: SOURCE,
+    sourceBot: BOT_NAME,
+    bot: BOT_NAME,
+    shopName: SHOP,
+    eventType,
+    globalId: globalId || null,
+    externalId: globalId ? String(globalId) : (BOT_NAME + "_lead_" + String(f.phone || "").replace(/[^\d]/g, "") + "_" + dailyNumber),
+    dailyNumber,
+    clientName: f.name || "",
+    name: f.name || "",
+    phone: phoneCrm || f.phone || "",
+    waPhone: "",
+    city: f.city || "",
+    address: f.address || "",
+    direction: f.direction || "Без кв.",
+    niche: f.direction || "Без кв.",
+    service: f.service || "Без кв.",
+    preferredTime: f.time || "",
+    comment: f.comment || "",
+    rawText: buildRaw(f),
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function sendLeadToCrm(f, dailyNumber, globalId, eventType = "new_lead") {
+  if (!CRM_WEBHOOK_URL) {
+    console.log("⚠️ CRM_WEBHOOK_URL не задан — в CRM не отправляем");
+    return { ok: false, skipped: true };
+  }
+  const payload = buildCrmLeadPayload(f, dailyNumber, globalId, eventType);
+  try {
+    const resp = await axios.post(CRM_WEBHOOK_URL, payload, {
+      headers: { "Content-Type": "application/json", "X-CRM-SECRET": CRM_WEBHOOK_SECRET },
+      timeout: 15000,
+      maxContentLength: 2 * 1024 * 1024
+    });
+    console.log("✅ CRM: " + payload.externalId + " отправлено, статус " + resp.status);
+    return { ok: true };
+  } catch (e) {
+    console.error("❌ CRM send error:", e.response?.data || e.message);
+    return { ok: false, error: e.response?.data || e.message };
+  }
+}
+
 app.get("/", (_req, res) => res.send("happ-to-telegram OK"));
 
 app.post("/lead", async (req, res) => {
@@ -102,8 +166,6 @@ app.post("/lead", async (req, res) => {
       const got = req.headers["x-secret"] || req.body?.secret || "";
       if (got !== HAPP_SECRET) return res.status(401).json({ ok: false, error: "bad secret" });
     }
-    if (!TG_TOKEN || !TG_CHAT) return res.status(500).json({ ok: false, error: "telegram not configured" });
-
     const f = parseFields(req.body || {});
     const phoneDigits = f.phone.replace(/[^\d]/g, "") || "voloda";
 
@@ -135,6 +197,7 @@ app.post("/lead", async (req, res) => {
       text: buildCard(f, dailyNumber, globalId),
     });
     console.log(`✅ заявка Володи #${globalId} (№${dailyNumber}) → Telegram`);
+    await sendLeadToCrm(f, dailyNumber, globalId, "new_lead");
     res.json({ ok: true, globalId, dailyNumber });
   } catch (e) {
     console.error("send error:", e.response?.data || e.message);
